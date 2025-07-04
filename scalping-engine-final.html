@@ -1,0 +1,130 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pro 1-Min Scalping Engine (Final Build)</title>
+  <style>
+    body { background: #0e0e0e; color: #f0f0f0; font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    header { background: #1a1a1a; padding: 15px; text-align: center; font-size: 22px; font-weight: bold; color: #00ff99; }
+    .section { padding: 15px; margin: 10px; background: #1f1f1f; border-radius: 10px; }
+    select, button { font-size: 16px; padding: 6px 10px; margin: 5px; border-radius: 5px; border: none; background: #00ff99; color: #000; }
+    .info span { margin-right: 15px; display: inline-block; font-weight: bold; }
+    .chart { height: 350px; margin: 10px 0; border-radius: 10px; overflow: hidden; }
+    .signal-box { margin-top: 10px; font-size: 18px; font-weight: bold; color: lime; }
+  </style>
+</head>
+<body>
+  <header>🔥 Pro Scalping Engine (1m • 200x • Final Version)</header>
+
+  <div class="section">
+    <label>Select Altcoin:</label>
+    <select id="altcoinSelect"></select>
+    <button onclick="loadAltcoin()">Load</button>
+    <div class="info">
+      <span id="signal">Signal: --</span>
+      <span id="targets">TP1: -- | TP2: -- | TP3: --</span>
+      <span id="lag">⏱ Lag: --</span>
+      <span id="pnl">📈 PNL: --</span>
+    </div>
+    <div class="signal-box" id="signalBox"></div>
+  </div>
+
+  <div class="chart"><iframe src="https://s.tradingview.com/widgetembed/?symbol=CRYPTOCAP:BTC.D&interval=1&theme=dark" width="100%" height="100%" frameborder="0"></iframe></div>
+  <div class="chart"><iframe src="https://s.tradingview.com/widgetembed/?symbol=BINANCE:BTCUSDT&interval=1&theme=dark" width="100%" height="100%" frameborder="0"></iframe></div>
+  <div class="chart" id="altcoinChart"></div>
+
+  <script>
+    const altcoins = [
+      "XRPUSDT","SOLUSDT","PEPEUSDT","MATICUSDT","ADAUSDT","AVAXUSDT","DOGEUSDT","LINKUSDT",
+      "LTCUSDT","TRXUSDT","APTUSDT","RNDRUSDT","ARBUSDT","INJUSDT","OPUSDT","DYDXUSDT",
+      "SUIUSDT","SEIUSDT","TIAUSDT","GALAUSDT","COTIUSDT","FLMUSDT","BLZUSDT","LINAUSDT",
+      "STORJUSDT","MINAUSDT","NEARUSDT","FILUSDT","ATOMUSDT","BCHUSDT","HBARUSDT","JASMYUSDT",
+      "CHZUSDT","BANDUSDT","RUNEUSDT","ONEUSDT","KAVAUSDT","ZENUSDT","ZILUSDT","ENJUSDT",
+      "FETUSDT","CTSIUSDT","ENSUSDT","SANDUSDT","MANAUSDT","CVCUSDT","DASHUSDT","XEMUSDT"
+    ];
+
+    const select = document.getElementById("altcoinSelect");
+    altcoins.forEach(c => {
+      const o = document.createElement("option");
+      o.value = c;
+      o.text = c.replace("USDT", "");
+      select.appendChild(o);
+    });
+
+    let lastDom = null, lastDomTime = null, lastAltPrice = null;
+    const sound = new Audio("https://assets.mixkit.co/sfx/download/mixkit-achievement-bell-600.wav");
+
+    function loadAltcoin() {
+      const alt = select.value;
+      document.getElementById("altcoinChart").innerHTML = `<iframe src='https://s.tradingview.com/widgetembed/?symbol=BINANCE:${alt}&interval=1&theme=dark' width='100%' height='100%' frameborder='0'></iframe>`;
+      updateSignal();
+    }
+
+    async function updateSignal() {
+      const alt = select.value;
+      if (!alt) return;
+
+      try {
+        const [altRes, btcRes, domRes] = await Promise.all([
+          fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${alt}`).then(r => r.json()),
+          fetch(`https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT`).then(r => r.json()),
+          fetch("https://api.coingecko.com/api/v3/global").then(r => r.json())
+        ]);
+
+        const altPrice = parseFloat(altRes.price);
+        const btcPrice = parseFloat(btcRes.price);
+        const btcDom = parseFloat(domRes.data.market_cap_percentage.btc);
+
+        if (lastDom !== null && Math.abs(btcDom - lastDom) > 0.15) {
+          lastDomTime = Date.now();
+          lastAltPrice = altPrice;
+        }
+
+        let lag = '--';
+        if (lastDomTime && lastAltPrice && Math.abs(altPrice - lastAltPrice) > 0.0005) {
+          lag = ((Date.now() - lastDomTime) / 60000).toFixed(2);
+        }
+        document.getElementById("lag").innerText = `⏱ Lag: ${lag} min`;
+
+        lastDom = btcDom;
+
+        let signal = '--';
+        let reason = '';
+
+        if (btcDom > lastDom && btcPrice < 60000) {
+          signal = 'SHORT';
+          reason = 'BTC.D ↑ + BTC ↓';
+        } else if (btcDom < lastDom && btcPrice > 60000) {
+          signal = 'LONG';
+          reason = 'BTC.D ↓ + BTC ↑';
+        }
+
+        document.getElementById("signal").innerText = `Signal: ${signal}`;
+        document.getElementById("signalBox").innerText = signal !== '--' ? `✅ ${signal} | ${reason}` : 'No signal yet';
+
+        const tp1 = (altPrice * (signal === 'LONG' ? 1.0005 : 0.9995)).toFixed(6);
+        const tp2 = (altPrice * (signal === 'LONG' ? 1.001 : 0.999)).toFixed(6);
+        const tp3 = (altPrice * (signal === 'LONG' ? 1.003 : 0.997)).toFixed(6);
+        const pnl = ((signal === 'LONG' ? (altPrice - lastAltPrice) : (lastAltPrice - altPrice)) / lastAltPrice * 200).toFixed(2);
+
+        document.getElementById("targets").innerText = `TP1: ${tp1} | TP2: ${tp2} | TP3: ${tp3}`;
+        document.getElementById("pnl").innerText = `📈 PNL: ${pnl}%`;
+
+        [tp1, tp2, tp3].forEach(tp => {
+          if (Math.abs(altPrice - tp)/tp < 0.0003) {
+            sound.play(); alert("🎯 TP HIT!");
+          }
+        });
+
+      } catch (e) {
+        console.error('Error:', e);
+      }
+    }
+
+    setInterval(updateSignal, 5000);
+    loadAltcoin();
+  </script>
+</body>
+</html>
